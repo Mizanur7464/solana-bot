@@ -347,20 +347,33 @@ async def handle_chat_member_update(update: Update, context: ContextTypes.DEFAUL
     
     if not success:
         print(f"❌ User {user_name} denied access to VIP channel: {message}")
-        # Remove user from channel
+        # Only notify admin, don't remove user automatically
         try:
-            await context.bot.ban_chat_member(
-                chat_id=VIP_CHANNEL_ID,
-                user_id=user_id
-            )
-            await context.bot.unban_chat_member(
-                chat_id=VIP_CHANNEL_ID,
-                user_id=user_id
+            await context.bot.send_message(
+                chat_id=ADMIN_USER_ID,
+                text=f"🚨 **User Joined VIP Channel with Insufficient Tokens!**\n\n"
+                     f"User: {user_name} (@{user_username})\n"
+                     f"User ID: {user_id}\n"
+                     f"Status: {message}\n\n"
+                     f"⚠️ **Action Required:**\n"
+                     f"Please manually remove this user from the VIP channel if needed.\n"
+                     f"Bot will not automatically remove users."
             )
         except Exception as e:
-            print(f"Error removing user from VIP channel: {e}")
+            print(f"Error notifying admin: {e}")
     else:
         print(f"✅ User {user_name} granted access to VIP channel")
+        # Notify admin about successful join
+        try:
+            await context.bot.send_message(
+                chat_id=ADMIN_USER_ID,
+                text=f"✅ **User Successfully Joined VIP Channel!**\n\n"
+                     f"User: {user_name} (@{user_username})\n"
+                     f"User ID: {user_id}\n"
+                     f"Status: {message}"
+            )
+        except Exception as e:
+            print(f"Error notifying admin: {e}")
 
 
 # === Telegram Bot Handlers ===
@@ -738,7 +751,7 @@ def daily_check_job(app):
 
 
 async def check_vip_channel_members(app):
-    """Check all VIP channel members and remove those with insufficient tokens"""
+    """Check all VIP channel members and notify admin about insufficient tokens"""
     print("🔍 Checking VIP channel members...")
     
     try:
@@ -747,7 +760,7 @@ async def check_vip_channel_members(app):
         # Note: get_chat_members is not available, so we'll check registered users
         
         users = load_users()
-        removed_count = 0
+        low_balance_count = 0
         
         for user_id, data in users.items():
             wallet = data.get('wallet')
@@ -760,30 +773,31 @@ async def check_vip_channel_members(app):
                 
             if balance < MIN_TOKEN_AMOUNT:
                 print(f"❌ User {user_id} has insufficient tokens: {balance}")
+                low_balance_count += 1
+                
+                # Only notify admin, don't remove user automatically
                 try:
-                    # Remove user from VIP channel
-                    await app.bot.ban_chat_member(
-                        chat_id=VIP_CHANNEL_ID,
-                        user_id=int(user_id)
-                    )
-                    await app.bot.unban_chat_member(
-                        chat_id=VIP_CHANNEL_ID,
-                        user_id=int(user_id)
-                    )
-                    removed_count += 1
-                    print(f"✅ Removed user {user_id} from VIP channel")
-                    
-                    # Notify admin
                     user_name = data.get('name', 'Unknown User')
                     await app.bot.send_message(
                         chat_id=ADMIN_USER_ID,
-                        text=f"🚨 User Removed from VIP Channel!\n\nUser: {user_name}\nWallet: {wallet[:8]}...{wallet[-8:]}\nBalance: {balance} tokens\nRequired: {MIN_TOKEN_AMOUNT} tokens\n\nUser has been automatically removed due to insufficient tokens."
+                        text=f"🚨 **Low Token Alert!**\n\n"
+                             f"User: {user_name} (@{data.get('username', 'No Username')})\n"
+                             f"Wallet: {wallet[:8]}...{wallet[-8:]}\n"
+                             f"Balance: {balance} tokens\n"
+                             f"Required: {MIN_TOKEN_AMOUNT} tokens\n"
+                             f"Missing: {MIN_TOKEN_AMOUNT - balance} tokens\n\n"
+                             f"⚠️ **Action Required:**\n"
+                             f"Please manually remove this user from the VIP channel if needed.\n"
+                             f"Bot will not automatically remove users."
                     )
                     
                 except Exception as e:
-                    print(f"Error removing user {user_id}: {e}")
+                    print(f"Error notifying admin about user {user_id}: {e}")
         
-        print(f"✅ VIP channel check complete. Removed {removed_count} users with insufficient tokens.")
+        if low_balance_count > 0:
+            print(f"✅ VIP channel check complete. Found {low_balance_count} users with insufficient tokens.")
+        else:
+            print("✅ VIP channel check complete. All users have sufficient tokens.")
         
     except Exception as e:
         print(f"Error checking VIP channel members: {e}")
