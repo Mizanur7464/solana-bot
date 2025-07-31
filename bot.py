@@ -38,7 +38,12 @@ USERS_FILE = config.USERS_FILE
 def load_users():
     try:
         with open(USERS_FILE, 'r') as f:
-            return json.load(f)
+            data = json.load(f)
+            # Validate data structure
+            if not isinstance(data, dict):
+                print("⚠️ Invalid users.json format, resetting to empty dict")
+                return {}
+            return data
     except (FileNotFoundError, json.JSONDecodeError):
         return {}
 
@@ -419,6 +424,10 @@ async def handle_vip_request(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # Check if effective_user exists
+    if not update.effective_user:
+        return
+    
     user_id = str(update.effective_user.id)
     user_name = update.effective_user.first_name or "Unknown User"
     user_username = update.effective_user.username or "No Username"
@@ -427,13 +436,29 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     users = load_users()
     if user_id in users and users[user_id].get('wallet'):
-        await update.message.reply_text(
-            f"✅ **Wallet Registered**\n\n"
-            f"Your wallet: {users[user_id]['wallet'][:8]}...{users[user_id]['wallet'][-8:]}\n\n"
-            "Use /vip to request VIP channel access\n"
-            "Use /verify to check your token balance\n"
-            "Use /change to update your wallet"
-        )
+        # Send private message
+        try:
+            await context.bot.send_message(
+                chat_id=int(user_id),
+                text=f"✅ **Wallet Registered**\n\n"
+                     f"Your wallet: {users[user_id]['wallet'][:8]}...{users[user_id]['wallet'][-8:]}\n\n"
+                     "Use /vip to request VIP channel access\n"
+                     "Use /verify to check your token balance\n"
+                     "Use /change to update your wallet"
+            )
+            # Confirm in group
+            await update.message.reply_text(
+                f"✅ **Welcome back, {user_name}!**\n\n"
+                "Check your private messages for wallet details."
+            )
+        except Exception as e:
+            await update.message.reply_text(
+                f"✅ **Welcome back, {user_name}!**\n\n"
+                f"Your wallet: {users[user_id]['wallet'][:8]}...{users[user_id]['wallet'][-8:]}\n\n"
+                "Use /vip to request VIP channel access\n"
+                "Use /verify to check your token balance\n"
+                "Use /change to update your wallet"
+            )
     else:
         # Create wallet connect button
         keyboard = [
@@ -442,15 +467,33 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
-        await update.message.reply_text(
-            "🚀 Welcome to Solana Token Checker Bot!\n\n"
-            "🔐 **VIP Access Required**\n"
-            f"Hold minimum {MIN_TOKEN_AMOUNT:,} tokens to access VIP channel.\n\n"
-            "Choose how to connect your wallet:\n\n"
-            "🔗 **Connect Wallet** - Quick wallet connection\n"
-            "📝 **Manual Entry** - Type wallet address manually",
-            reply_markup=reply_markup
-        )
+        # Send private message
+        try:
+            await context.bot.send_message(
+                chat_id=int(user_id),
+                text="🚀 Welcome to Solana Token Checker Bot!\n\n"
+                     "🔐 **VIP Access Required**\n"
+                     f"Hold minimum {MIN_TOKEN_AMOUNT:,} tokens to access VIP channel.\n\n"
+                     "Choose how to connect your wallet:\n\n"
+                     "🔗 **Connect Wallet** - Quick wallet connection\n"
+                     "📝 **Manual Entry** - Type wallet address manually",
+                reply_markup=reply_markup
+            )
+            # Confirm in group
+            await update.message.reply_text(
+                f"🎉 **Welcome, {user_name}!**\n\n"
+                "Check your private messages to connect your wallet."
+            )
+        except Exception as e:
+            await update.message.reply_text(
+                "🚀 Welcome to Solana Token Checker Bot!\n\n"
+                "🔐 **VIP Access Required**\n"
+                f"Hold minimum {MIN_TOKEN_AMOUNT:,} tokens to access VIP channel.\n\n"
+                "Choose how to connect your wallet:\n\n"
+                "🔗 **Connect Wallet** - Quick wallet connection\n"
+                "📝 **Manual Entry** - Type wallet address manually",
+                reply_markup=reply_markup
+            )
         context.user_data['awaiting_wallet'] = True
 
 
@@ -522,13 +565,15 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "Please check your wallet address and try again."
             )
     else:
-        await update.message.reply_text(
-            "Use /start to begin or /verify to check tokens.\n"
-            "Use /change to update your wallet address."
-        )
+        # IGNORE normal messages - don't reply to avoid spam
+        return
 
 
 async def verify(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # Check if effective_user exists
+    if not update.effective_user:
+        return
+    
     user_id = str(update.effective_user.id)
     user_name = update.effective_user.first_name or "Unknown User"
     user_username = update.effective_user.username or "No Username"
@@ -539,43 +584,111 @@ async def verify(update: Update, context: ContextTypes.DEFAULT_TYPE):
     wallet = users.get(user_id, {}).get('wallet')
     
     if not wallet:
-        await update.message.reply_text(
-            "❌ **No Wallet Found**\n\n"
-            "Please use /start to register your wallet first."
-        )
+        # Send private message
+        try:
+            await context.bot.send_message(
+                chat_id=int(user_id),
+                text="❌ **No Wallet Found**\n\nPlease use /start to register your wallet first."
+            )
+            # Confirm in group
+            await update.message.reply_text(
+                f"❌ **No Wallet Found**\n\n"
+                f"Check your private messages for details."
+            )
+        except Exception as e:
+            await update.message.reply_text(
+                "❌ **No Wallet Found**\n\n"
+                "Please use /start to register your wallet first."
+            )
         return
     
     balance = get_token_balance(wallet, SOLANA_TOKEN_MINT)
     
     if balance is None:
-        await update.message.reply_text(
-            "❌ **Error checking balance**\n\n"
-            "Unable to fetch wallet data. Please try again later."
-        )
+        # Send private message
+        try:
+            await context.bot.send_message(
+                chat_id=int(user_id),
+                text="❌ **Error checking balance**\n\nUnable to fetch wallet data. Please try again later."
+            )
+            # Confirm in group
+            await update.message.reply_text(
+                f"❌ **Error checking balance**\n\n"
+                f"Check your private messages for details."
+            )
+        except Exception as e:
+            await update.message.reply_text(
+                "❌ **Error checking balance**\n\n"
+                "Unable to fetch wallet data. Please try again later."
+            )
         return
     
-    await update.message.reply_text(
-        f"📊 **Token Balance**\n\n"
-        f"Wallet: {wallet[:8]}...{wallet[-8:]}\n"
-        f"Balance: {balance:,.2f} tokens\n"
-        f"Required: {MIN_TOKEN_AMOUNT:,} tokens\n\n"
-        f"{'✅ Sufficient tokens for VIP access' if balance >= MIN_TOKEN_AMOUNT else '❌ Insufficient tokens for VIP access'}\n\n"
-        "Use /vip to request VIP channel access"
-    )
+    # Send private message with balance details
+    try:
+        await context.bot.send_message(
+            chat_id=int(user_id),
+            text=f"📊 **Token Balance**\n\n"
+                 f"Wallet: {wallet[:8]}...{wallet[-8:]}\n"
+                 f"Balance: {balance:,.2f} tokens\n"
+                 f"Required: {MIN_TOKEN_AMOUNT:,} tokens\n\n"
+                 f"{'✅ Sufficient tokens for VIP access' if balance >= MIN_TOKEN_AMOUNT else '❌ Insufficient tokens for VIP access'}\n\n"
+                 "Use /vip to request VIP channel access"
+        )
+        # Confirm in group
+        await update.message.reply_text(
+            f"✅ **Balance Check Complete!**\n\n"
+            f"Check your private messages for detailed balance information.\n"
+            f"{'🎉 VIP Access Available!' if balance >= MIN_TOKEN_AMOUNT else '❌ VIP Access Denied'}"
+        )
+    except Exception as e:
+        await update.message.reply_text(
+            f"📊 **Token Balance**\n\n"
+            f"Wallet: {wallet[:8]}...{wallet[-8:]}\n"
+            f"Balance: {balance:,.2f} tokens\n"
+            f"Required: {MIN_TOKEN_AMOUNT:,} tokens\n\n"
+            f"{'✅ Sufficient tokens for VIP access' if balance >= MIN_TOKEN_AMOUNT else '❌ Insufficient tokens for VIP access'}\n\n"
+            "Use /vip to request VIP channel access"
+        )
 
 
 async def vip_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle VIP access requests"""
+    # Check if effective_user exists
+    if not update.effective_user:
+        return
+    
     await handle_vip_request(update, context)
 
 
 async def change_wallet(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "🔄 Wallet Update\n\n"
-        "Please send your new Solana wallet address.\n"
-        "You can copy it from your wallet app or DEXScreener.\n\n"
-        "Example: 7Gk1v2Qw3e4r5t6y7u8i9o0pLkJhGfDsAqWeRtYuIoP"
-    )
+    # Check if effective_user exists
+    if not update.effective_user:
+        return
+    
+    user_id = str(update.effective_user.id)
+    user_name = update.effective_user.first_name or "Unknown User"
+    
+    # Send private message
+    try:
+        await context.bot.send_message(
+            chat_id=int(user_id),
+            text="🔄 **Wallet Update**\n\n"
+                 "Please send your new Solana wallet address.\n"
+                 "You can copy it from your wallet app or DEXScreener.\n\n"
+                 "Example: 7Gk1v2Qw3e4r5t6y7u8i9o0pLkJhGfDsAqWeRtYuIoP"
+        )
+        # Confirm in group
+        await update.message.reply_text(
+            f"🔄 **Wallet Update Requested**\n\n"
+            f"Check your private messages to update your wallet."
+        )
+    except Exception as e:
+        await update.message.reply_text(
+            "🔄 **Wallet Update**\n\n"
+            "Please send your new Solana wallet address.\n"
+            "You can copy it from your wallet app or DEXScreener.\n\n"
+            "Example: 7Gk1v2Qw3e4r5t6y7u8i9o0pLkJhGfDsAqWeRtYuIoP"
+        )
     context.user_data['awaiting_wallet'] = True
 
 
@@ -607,24 +720,58 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "🤖 Solana Token Checker Bot\n\n"
-        "🔐 **VIP Access System**\n"
-        f"Hold minimum {MIN_TOKEN_AMOUNT:,} tokens for VIP channel access.\n\n"
-        "Commands:\n"
-        "📋 /start - Start the bot and add wallet\n"
-        "🔍 /verify - Check your token balance\n"
-        "🔐 /vip - Request VIP channel access\n"
-        "🔄 /change - Update your wallet address\n"
-        "✅ /checkme - Check your balance manually\n"
-        "❓ /help - Show this help message\n\n"
-        "Features:\n"
-        "✅ Manual wallet verification\n"
-        "📊 Token balance monitoring\n"
-        "🚨 Admin notifications for low balance\n"
-        "🔐 VIP channel access management\n\n"
-        f"Minimum tokens required: {MIN_TOKEN_AMOUNT:,}"
-    )
+    # Check if effective_user exists
+    if not update.effective_user:
+        return
+    
+    user_id = str(update.effective_user.id)
+    user_name = update.effective_user.first_name or "Unknown User"
+    
+    # Send private message
+    try:
+        await context.bot.send_message(
+            chat_id=int(user_id),
+            text="🤖 **Solana Token Checker Bot**\n\n"
+                 "🔐 **VIP Access System**\n"
+                 f"Hold minimum {MIN_TOKEN_AMOUNT:,} tokens for VIP channel access.\n\n"
+                 "Commands:\n"
+                 "📋 /start - Start the bot and add wallet\n"
+                 "🔍 /verify - Check your token balance\n"
+                 "🔐 /vip - Request VIP channel access\n"
+                 "🔄 /change - Update your wallet address\n"
+                 "✅ /checkme - Check your balance manually\n"
+                 "❓ /help - Show this help message\n\n"
+                 "Features:\n"
+                 "✅ Manual wallet verification\n"
+                 "📊 Token balance monitoring\n"
+                 "🚨 Admin notifications for low balance\n"
+                 "🔐 VIP channel access management\n\n"
+                 f"Minimum tokens required: {MIN_TOKEN_AMOUNT:,}"
+        )
+        # Confirm in group
+        await update.message.reply_text(
+            f"❓ **Help Information**\n\n"
+            f"Check your private messages for detailed help information."
+        )
+    except Exception as e:
+        await update.message.reply_text(
+            "🤖 **Solana Token Checker Bot**\n\n"
+            "🔐 **VIP Access System**\n"
+            f"Hold minimum {MIN_TOKEN_AMOUNT:,} tokens for VIP channel access.\n\n"
+            "Commands:\n"
+            "📋 /start - Start the bot and add wallet\n"
+            "🔍 /verify - Check your token balance\n"
+            "🔐 /vip - Request VIP channel access\n"
+            "🔄 /change - Update your wallet address\n"
+            "✅ /checkme - Check your balance manually\n"
+            "❓ /help - Show this help message\n\n"
+            "Features:\n"
+            "✅ Manual wallet verification\n"
+            "📊 Token balance monitoring\n"
+            "🚨 Admin notifications for low balance\n"
+            "🔐 VIP channel access management\n\n"
+            f"Minimum tokens required: {MIN_TOKEN_AMOUNT:,}"
+        )
 
 
 async def checkme_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -835,6 +982,13 @@ def main():
     print("🤖 Solana Token Checker Bot (Channel Mode) is running...")
     print(f"Minimum tokens required: {MIN_TOKEN_AMOUNT:,}")
     print(f"VIP Channel: {VIP_CHANNEL_LINK}")
+    
+    # Start scheduler in background
+    import threading
+    scheduler_thread = threading.Thread(target=run_scheduler, args=(app,), daemon=True)
+    scheduler_thread.start()
+    print("📅 Scheduler started successfully!")
+    
     app.run_polling()
 
 
